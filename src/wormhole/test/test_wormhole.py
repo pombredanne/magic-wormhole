@@ -3,12 +3,14 @@ import io, re
 import mock
 from twisted.trial import unittest
 from twisted.internet import reactor
-from twisted.internet.defer import gatherResults, inlineCallbacks
+from twisted.internet.defer import gatherResults, inlineCallbacks, returnValue
+from twisted.internet.error import ConnectionRefusedError
 from .common import ServerBase, poll_until, pause_one_tick
 from .. import wormhole, _rendezvous
-from ..errors import (WrongPasswordError,
+from ..errors import (WrongPasswordError, ServerConnectionError,
                       KeyFormatError, WormholeClosed, LonelyError,
                       NoKeyError, OnlyOneCodeError)
+from ..transit import allocate_tcp_port
 
 APPID = "appid"
 
@@ -588,6 +590,69 @@ class Reconnection(ServerBase, unittest.TestCase):
         self.assertEqual(c1, "happy")
         c2 = yield w2.close()
         self.assertEqual(c2, "happy")
+
+class InitialFailure(unittest.TestCase):
+    def assertSCEResultOf(self, d, innerType):
+        f = self.failureResultOf(d, ServerConnectionError)
+        inner = f.value.reason
+        self.assertIsInstance(inner, innerType)
+        return inner
+
+    @inlineCallbacks
+    def test_bad_dns(self):
+        # point at a URL that will never connect
+        w = wormhole.create(APPID, "ws://%%%.example.org:4000/v1", reactor)
+        # that should have already received an error, when it tried to
+        # resolve the bogus DNS name. All API calls will return an error.
+        e = yield self.assertFailure(w.when_key(), ServerConnectionError)
+        self.assertIsInstance(e.reason, ValueError)
+        self.assertEqual(str(e), "invalid hostname: %%%.example.org")
+        self.assertSCEResultOf(w.when_code(), ValueError)
+        self.assertSCEResultOf(w.when_verified(), ValueError)
+        self.assertSCEResultOf(w.when_version(), ValueError)
+        self.assertSCEResultOf(w.when_received(), ValueError)
+
+    @inlineCallbacks
+    def assertSCE(self, d, innerType):
+        e = yield self.assertFailure(d, ServerConnectionError)
+        inner = e.reason
+        self.assertIsInstance(inner, innerType)
+        returnValue(inner)
+
+    @inlineCallbacks
+    def test_no_connection(self):
+        # point at a URL that will never connect
+        port = allocate_tcp_port()
+        w = wormhole.create(APPID, "ws://127.0.0.1:%d/v1" % port, reactor)
+        # nothing is listening, but it will take a turn to discover that
+        d1 = w.when_code()
+        d2 = w.when_key()
+        d3 = w.when_verified()
+        d4 = w.when_version()
+        d5 = w.when_received()
+        yield self.assertSCE(d1, ConnectionRefusedError)
+        yield self.assertSCE(d2, ConnectionRefusedError)
+        yield self.assertSCE(d3, ConnectionRefusedError)
+        yield self.assertSCE(d4, ConnectionRefusedError)
+        yield self.assertSCE(d5, ConnectionRefusedError)
+
+    @inlineCallbacks
+    def test_all_deferreds(self):
+        # point at a URL that will never connect
+        port = allocate_tcp_port()
+        w = wormhole.create(APPID, "ws://127.0.0.1:%d/v1" % port, reactor)
+        # nothing is listening, but it will take a turn to discover that
+        w.allocate_code()
+        d1 = w.when_code()
+        d2 = w.when_key()
+        d3 = w.when_verified()
+        d4 = w.when_version()
+        d5 = w.when_received()
+        yield self.assertSCE(d1, ConnectionRefusedError)
+        yield self.assertSCE(d2, ConnectionRefusedError)
+        yield self.assertSCE(d3, ConnectionRefusedError)
+        yield self.assertSCE(d4, ConnectionRefusedError)
+        yield self.assertSCE(d5, ConnectionRefusedError)
 
 class Trace(unittest.TestCase):
     def test_basic(self):

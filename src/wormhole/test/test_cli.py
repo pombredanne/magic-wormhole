@@ -8,10 +8,12 @@ from twisted.python import procutils, log
 from twisted.internet import defer, endpoints, reactor
 from twisted.internet.utils import getProcessOutputAndValue
 from twisted.internet.defer import gatherResults, inlineCallbacks, returnValue
+from twisted.internet.error import ConnectionRefusedError
 from .. import __version__
 from .common import ServerBase, config
 from ..cli import cmd_send, cmd_receive, welcome, cli
-from ..errors import TransferError, WrongPasswordError, WelcomeError
+from ..errors import (TransferError, WrongPasswordError, WelcomeError,
+                      ServerConnectionError)
 
 
 def build_offer(args):
@@ -830,6 +832,61 @@ class NotWelcome(ServerBase, unittest.TestCase):
         f = yield self.assertFailure(receive_d, WelcomeError)
         self.assertEqual(str(f), "please upgrade XYZ")
 
+class NoServer(ServerBase, unittest.TestCase):
+    @inlineCallbacks
+    def setUp(self):
+        self._setup_relay(None)
+        yield self._relay.disownServiceParent()
+
+    @inlineCallbacks
+    def test_sender(self):
+        cfg = config("send")
+        cfg.hide_progress = True
+        cfg.listen = False
+        cfg.relay_url = self.relayurl
+        cfg.transit_helper = ""
+        cfg.stdout = io.StringIO()
+        cfg.stderr = io.StringIO()
+
+        cfg.text = "hi"
+        cfg.code = "1-abc"
+
+        send_d = cmd_send.send(cfg)
+        e = yield self.assertFailure(send_d, ServerConnectionError)
+        self.assertIsInstance(e.reason, ConnectionRefusedError)
+
+    @inlineCallbacks
+    def test_sender_allocation(self):
+        cfg = config("send")
+        cfg.hide_progress = True
+        cfg.listen = False
+        cfg.relay_url = self.relayurl
+        cfg.transit_helper = ""
+        cfg.stdout = io.StringIO()
+        cfg.stderr = io.StringIO()
+
+        cfg.text = "hi"
+
+        send_d = cmd_send.send(cfg)
+        e = yield self.assertFailure(send_d, ServerConnectionError)
+        self.assertIsInstance(e.reason, ConnectionRefusedError)
+
+    @inlineCallbacks
+    def test_receiver(self):
+        cfg = config("receive")
+        cfg.hide_progress = True
+        cfg.listen = False
+        cfg.relay_url = self.relayurl
+        cfg.transit_helper = ""
+        cfg.stdout = io.StringIO()
+        cfg.stderr = io.StringIO()
+
+        cfg.code = "1-abc"
+
+        receive_d = cmd_receive.receive(cfg)
+        e = yield self.assertFailure(receive_d, ServerConnectionError)
+        self.assertIsInstance(e.reason, ConnectionRefusedError)
+
 class Cleanup(ServerBase, unittest.TestCase):
 
     def setUp(self):
@@ -1047,6 +1104,18 @@ class Dispatch(unittest.TestCase):
         yield self.assertFailure(cli._dispatch_command(reactor, cfg, fake),
                                  SystemExit)
         expected = "TransferError: abcd\n"
+        self.assertEqual(cfg.stderr.getvalue(), expected)
+
+    @inlineCallbacks
+    def test_server_connection_error(self):
+        cfg = config("send")
+        cfg.stderr = io.StringIO()
+        def fake():
+            raise ServerConnectionError(ValueError("abcd"))
+        yield self.assertFailure(cli._dispatch_command(reactor, cfg, fake),
+                                 SystemExit)
+        expected = fill("ERROR: " + dedent(ServerConnectionError.__doc__))+"\n"
+        expected += "abcd\n"
         self.assertEqual(cfg.stderr.getvalue(), expected)
 
     @inlineCallbacks
