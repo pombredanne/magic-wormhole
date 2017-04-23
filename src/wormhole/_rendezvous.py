@@ -6,7 +6,8 @@ from attr.validators import provides, instance_of
 from zope.interface import implementer
 from twisted.python import log
 from twisted.internet import defer, endpoints, task
-from twisted.application import internet
+#from twisted.application import internet
+from . import _t_a_internet as internet
 from autobahn.twisted import websocket
 from . import _interfaces, errors
 from .util import (bytes_to_hexstr, hexstr_to_bytes,
