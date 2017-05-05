@@ -377,13 +377,13 @@ functions on the delegate object. In Deferred mode, the application retrieves
 Deferred objects from the wormhole, and event dispatch is performed by firing
 those Deferreds.
 
-* got_code (`yield w.when_code()` / `dg.wormhole_code(code)`): fired when the
+* code (`yield w.upon_code()` / `dg.wormhole_code(code)`): fired when the
   wormhole code is established, either after `w.generate_code()` finishes the
   generation process, or when the Input Helper returned by `w.input_code()`
   has been told `h.set_words()`, or immediately after `w.set_code(code)` is
   called. This is most useful after calling `w.generate_code()`, to show the
   generated code to the user so they can transcribe it to their peer.
-* key (`yield w.when_key()` / `dg.wormhole_key()`): fired when the
+* key (`yield w.upon_key()` / `dg.wormhole_key()`): fired when the
   key-exchange process has completed and a purported shared key is
   established. At this point we do not know that anyone else actually shares
   this key: the peer may have used the wrong code, or may have disappeared
@@ -391,7 +391,7 @@ those Deferreds.
   `when_verified` instead. This event is really only useful for detecting
   that the initiating peer has disconnected after leaving the initial PAKE
   message, to display a pacifying message to the user.
-* verified (`verifier = yield w.when_verified()` /
+* verifier (`verifier = yield w.upon_verified()` /
   `dg.wormhole_verified(verifier)`: fired when the key-exchange process has
   completed and a valid VERSION message has arrived. The "verifier" is a byte
   string with a hash of the shared session key; clients can compare them
@@ -400,14 +400,14 @@ those Deferreds.
   that *someone* has used the correct wormhole code; if someone used the
   wrong code, the VERSION message cannot be decrypted, and the wormhole will
   be closed instead.
-* version (`yield w.when_version()` / `dg.wormhole_version(versions)`: fired
+* version (`yield w.upon_version()` / `dg.wormhole_version(versions)`: fired
   when the VERSION message arrives from the peer. This fires at the same time
   as `verified`, but delivers the "app_versions" data (as passed into
   `wormhole.create(versions=)`) instead of the verifier string.
-* received (`yield w.when_received()` / `dg.wormhole_received(data)`: fired
+* message (`yield w.upon_message()` / `dg.wormhole_received(data)`: fired
   each time a data message arrives from the peer, with the bytestring that
   the peer passed into `w.send(data)`.
-* closed (`yield w.close()` / `dg.wormhole_closed(result)`: fired when
+* close (`yield w.close()` / `dg.wormhole_closed(result)`: fired when
   `w.close()` has finished shutting down the wormhole, which means all
   nameplates and mailboxes have been deallocated, and the WebSocket
   connection has been closed. This also fires if an internal error occurs
